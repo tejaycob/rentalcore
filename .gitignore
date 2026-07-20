@@ -1,21 +1,4 @@
-# Dependencies
 node_modules/
-
-# Build output
 dist/
-
-# Environment variables — NEVER commit real secrets
 .env
-.env.local
-.env.production
-
-# Logs
-npm-debug.log*
-
-# Editor / OS
-.DS_Store
-.vscode/
-.idea/
-
-# TypeScript
 *.tsbuildinfo
