@@ -10,6 +10,7 @@
 
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -18,6 +19,13 @@ async function bootstrap() {
   });
 
   app.enableCors();
+
+  // Global validation for every DTO decorated with class-validator
+  // (RegisterDto, LoginDto, etc.) — whitelist strips unknown fields
+  // instead of erroring on them, forbidNonWhitelisted would reject the
+  // request outright; whitelist-only is the friendlier default for a
+  // frontend that's still evolving alongside this API.
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
   await app.listen(port);
