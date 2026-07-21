@@ -10,6 +10,8 @@ import { en } from './locales/en';
 import { pt } from './locales/pt';
 import { Locale, TranslationKey, TranslationKeys } from './i18n.types';
 
+// TranslationKeys, not `typeof en` — the latter carries literal types from
+// `as const` and would reject any actual translation.
 const RESOURCES: Record<Locale, TranslationKeys> = { en, pt };
 
 @Injectable()

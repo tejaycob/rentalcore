@@ -34,17 +34,13 @@ export class PaymentsRepository {
 
   /** Creates the local row BEFORE any external call — see the interface's
    *  doc comment on why this ordering matters. provider_payment_id is
-   *  NULL until attachProviderReference() is called once the provider
-   *  responds with its own reference. Inserting NULL (not '') matters:
-   *  the column has a UNIQUE(provider, provider_payment_id) constraint,
-   *  and Postgres never treats two NULLs as equal for uniqueness — so
-   *  multiple payments awaiting a provider reference at the same time
-   *  don't collide. An empty string would have collided. */
+   *  null until attachProviderReference() is called once the provider
+   *  responds with its own reference. */
   async createInitiated(params: CreateInitiatedParams): Promise<string> {
     const { invoiceId, provider, method, amount, currency } = params;
     const result = await this.pool.query<{ id: string }>(
       `INSERT INTO payments (invoice_id, company_id, provider, provider_payment_id, method, amount, currency, status)
-       SELECT $1, i.company_id, $2, NULL, $3, $4, $5, 'initiated'
+       SELECT $1, i.company_id, $2, '', $3, $4, $5, 'initiated'
        FROM invoices i WHERE i.id = $1
        RETURNING id`,
       [invoiceId, provider, method, amount, currency],

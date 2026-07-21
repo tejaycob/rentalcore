@@ -1,39 +1,47 @@
-// src/auth/auth.controller.ts
-//
-// Route shapes here match src/lib/api.ts on the frontend exactly:
-// POST /auth/register, /auth/login, /auth/refresh, /auth/logout — each
-// returning { accessToken, refreshToken, user } (logout returns 204).
-
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, Req, HttpCode } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { RegisterDto } from './dto/register.dto';
-import { LoginDto } from './dto/login.dto';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { JwtAuthGuard } from './jwt-auth.guard';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly auth: AuthService) {}
 
   @Post('register')
-  async register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  async register(@Body() body: {
+    companyName: string;
+    countryCode: 'MZ' | 'ZA' | 'AO';
+    currency: string;
+    name: string;
+    email: string;
+    password: string;
+    locale: 'pt' | 'en';
+    phone?: string;
+  }) {
+    return this.auth.register(body);
   }
 
   @Post('login')
-  @HttpCode(HttpStatus.OK)
-  async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  @HttpCode(200)
+  async login(@Body() body: { email: string; password: string; deviceLabel?: string }) {
+    return this.auth.login(body.email, body.password, body.deviceLabel);
   }
 
   @Post('refresh')
-  @HttpCode(HttpStatus.OK)
-  async refresh(@Body() dto: RefreshTokenDto) {
-    return this.authService.refresh(dto.refreshToken);
+  @HttpCode(200)
+  async refresh(@Body() body: { refreshToken: string }) {
+    return this.auth.refresh(body.refreshToken);
   }
 
   @Post('logout')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async logout(@Body() dto: RefreshTokenDto): Promise<void> {
-    await this.authService.logout(dto.refreshToken);
+  @HttpCode(200)
+  async logout(@Body() body: { refreshToken: string }) {
+    await this.auth.logout(body.refreshToken);
+    return { success: true };
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  me(@Req() req: any) {
+    return req.user;
   }
 }

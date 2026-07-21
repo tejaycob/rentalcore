@@ -8,15 +8,19 @@
 
 import { en } from './locales/en';
 
-// Same structure as `en`, but with every leaf widened to `string` — pt.ts
-// must match this shape exactly, but its values are Portuguese, not the
-// literal English words from en.ts.
-type DeepStringify<T> = {
-  readonly [K in keyof T]: T[K] extends string ? string : DeepStringify<T[K]>;
-};
-
-export type TranslationKeys = DeepStringify<typeof en>;
 export type Locale = 'pt' | 'en';
+
+// en.ts is declared `as const`, so `typeof en` gives LITERAL types —
+// occupied is the type "Occupied", not string. Using that directly as the
+// contract for pt.ts is unsatisfiable: it would require the Portuguese
+// file to contain the English words verbatim. Widen the leaves to `string`
+// while leaving the key structure intact, so a missing/extra/misnested key
+// is still a compile error but the translated text is free.
+type WidenLeaves<T> = T extends string
+  ? string
+  : { [K in keyof T]: WidenLeaves<T[K]> };
+
+export type TranslationKeys = WidenLeaves<typeof en>;
 
 // Dot-path of every leaf key, e.g. 'invoice.status.paid' — used as the
 // argument type for t() so a typo'd key path is also a compile error.

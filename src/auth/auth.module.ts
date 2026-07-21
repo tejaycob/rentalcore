@@ -1,26 +1,28 @@
-// src/auth/auth.module.ts
-
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
-import { DatabaseModule } from '../database/database.module';
+import { PassportModule } from '@nestjs/passport';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { AuthRepository } from './auth.repository';
-import { JwtStrategyGuard } from './jwt-strategy.guard';
+import { JwtStrategy } from './jwt.strategy';
+import { UsersRepository } from './users.repository';
+import { DatabaseModule } from '../database/database.module';
 
 @Module({
   imports: [
     DatabaseModule,
-    JwtModule.register({
-      // Same env-var convention as ENCRYPTION_MASTER_KEY in crypto/secrets.service.ts —
-      // required at startup, no fallback default, so a misconfigured deploy fails
-      // loudly instead of signing tokens with a guessable key.
-      secret: process.env.JWT_SECRET,
-      signOptions: { expiresIn: '15m' },
+    PassportModule,
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secret: config.get<string>('JWT_SECRET'),
+        signOptions: { expiresIn: '15m' },
+      }),
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthRepository, JwtStrategyGuard],
-  exports: [JwtStrategyGuard, JwtModule],
+  providers: [AuthService, JwtStrategy, UsersRepository],
+  exports: [AuthService, UsersRepository],
 })
 export class AuthModule {}
