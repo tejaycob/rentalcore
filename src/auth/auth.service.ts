@@ -65,12 +65,7 @@ export class AuthService {
 
     // Platform admins have no company, so there is nothing to suspend.
     if (user.company_id) {
-      const { rows: [company] } = await this.pool.query<{
-        active: boolean; subscription_status: string;
-      }>(
-        `SELECT active, subscription_status FROM companies WHERE id = $1`,
-        [user.company_id],
-      );
+      const company = await this.loadCompanyAccess(user.company_id);
       if (!company) return deny('company_missing');
       if (!company.active || company.subscription_status === 'suspended') {
         return deny('company_suspended');
@@ -86,6 +81,47 @@ export class AuthService {
     });
 
     return this.issueTokens(user, deviceLabel);
+  }
+
+
+  /**
+   * Reads the access flags a login depends on.
+   *
+   * `active` has existed since the first migration; `subscription_status`
+   * arrives in 004. If the code is deployed before that migration runs —
+   * which is exactly what happened on 22 Jul — querying the newer column
+   * throws 42703 and every login 500s, including for accounts that have
+   * nothing to do with subscriptions.
+   *
+   * A pending migration should degrade one feature, not lock everyone out.
+   * So the richer query is attempted first and falls back to the columns
+   * that are guaranteed to exist. Once 004 is applied the fallback simply
+   * stops being used; nothing needs changing here afterwards.
+   */
+  private async loadCompanyAccess(
+    companyId: string,
+  ): Promise<{ active: boolean; subscription_status: string } | null> {
+    try {
+      const { rows } = await this.pool.query<{ active: boolean; subscription_status: string }>(
+        `SELECT active, subscription_status FROM companies WHERE id = $1`,
+        [companyId],
+      );
+      return rows[0] ?? null;
+    } catch (err: any) {
+      // 42703 = undefined_column. Any other failure is a real problem and
+      // must not be swallowed into a silent "allowed".
+      if (err?.code !== '42703') throw err;
+
+      console.warn(
+        '[auth] companies.subscription_status is missing — migration 004 has not been applied. ' +
+        'Falling back to companies.active; suspension enforcement is inactive until it runs.',
+      );
+      const { rows } = await this.pool.query<{ active: boolean }>(
+        `SELECT active FROM companies WHERE id = $1`,
+        [companyId],
+      );
+      return rows[0] ? { active: rows[0].active, subscription_status: 'active' } : null;
+    }
   }
 
   /** Append-only audit. Never allowed to break a login — a failure to log
