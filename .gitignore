@@ -3,3 +3,6 @@ dist/
 .env
 *.tsbuildinfo
 *.bak-*
+.env.local
+.next/
+.DS_Store
