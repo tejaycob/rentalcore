@@ -33,65 +33,92 @@ export class AuthService {
     private readonly pool: Pool,
   ) {}
 
-  async login(email: string, password: string, deviceLabel?: string): Promise<AuthTokens> {
+  async login(
+    email: string,
+    password: string,
+    deviceLabel?: string,
+    context?: { ip?: string; userAgent?: string },
+  ): Promise<AuthTokens> {
     const user = await this.users.findByEmail(email);
-    if (!user) throw new UnauthorizedException('Invalid credentials');
+
+    // Every branch below records the attempt before throwing, so the
+    // platform console can show who is getting in and who is failing.
+    // The message stays identical throughout — a caller must not be able
+    // to tell "no such account" from "wrong password" from "suspended".
+    const deny = async (reason: string): Promise<never> => {
+      await this.recordLogin({
+        userId: user?.id ?? null,
+        companyId: user?.company_id ?? null,
+        email,
+        success: false,
+        failureReason: reason,
+        ...context,
+      });
+      throw new UnauthorizedException('Invalid credentials');
+    };
+
+    if (!user) return deny('no_such_user');
 
     const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) throw new UnauthorizedException('Invalid credentials');
+    if (!valid) return deny('bad_password');
+    if (!user.active) return deny('user_inactive');
+
+    // Platform admins have no company, so there is nothing to suspend.
+    if (user.company_id) {
+      const { rows: [company] } = await this.pool.query<{
+        active: boolean; subscription_status: string;
+      }>(
+        `SELECT active, subscription_status FROM companies WHERE id = $1`,
+        [user.company_id],
+      );
+      if (!company) return deny('company_missing');
+      if (!company.active || company.subscription_status === 'suspended') {
+        return deny('company_suspended');
+      }
+    }
+
+    await this.recordLogin({
+      userId: user.id,
+      companyId: user.company_id,
+      email,
+      success: true,
+      ...context,
+    });
 
     return this.issueTokens(user, deviceLabel);
   }
 
-  async register(params: {
-    companyName: string;
-    countryCode: 'MZ' | 'ZA' | 'AO';
-    currency: string;
-    name: string;
+  /** Append-only audit. Never allowed to break a login — a failure to log
+   *  must not lock someone out, so it is swallowed deliberately. */
+  private async recordLogin(e: {
+    userId: string | null;
+    companyId: string | null;
     email: string;
-    password: string;
-    locale: 'pt' | 'en';
-    phone?: string;
-  }): Promise<AuthTokens> {
-    // Check email not taken (outside RLS since no session yet)
-    const existing = await this.users.findByEmail(params.email);
-    if (existing) throw new ConflictException('Email already registered');
-
-    const client = await this.pool.connect();
+    success: boolean;
+    failureReason?: string;
+    ip?: string;
+    userAgent?: string;
+  }): Promise<void> {
     try {
-      await client.query('BEGIN');
-
-      // Create company. The trial lives on companies.plan_tier /
-      // companies.trial_ends_at — both confirmed present in the migration.
-      // An earlier version also inserted a row into `subscriptions` using
-      // column names that were never checked against the real schema; if any
-      // of them didn't exist, Postgres aborted the transaction and register
-      // failed with an opaque 500. Removed rather than guessed at. Billing
-      // can populate `subscriptions` later, once its shape is confirmed.
-      const { rows: [company] } = await client.query<{ id: string }>(
-        `INSERT INTO companies (name, country_code, currency, plan_tier, trial_ends_at)
-         VALUES ($1, $2, $3, 'starter', now() + interval '30 days')
-         RETURNING id`,
-        [params.companyName, params.countryCode, params.currency],
+      await this.pool.query(
+        `INSERT INTO login_events
+           (user_id, company_id, email, success, failure_reason, ip_address, user_agent)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [e.userId, e.companyId, e.email, e.success,
+         e.failureReason ?? null, e.ip ?? null, e.userAgent ?? null],
       );
-
-      const hash = await bcrypt.hash(params.password, 12);
-      const { rows: [user] } = await client.query(
-        `INSERT INTO users (company_id, role, name, email, phone, password_hash, locale)
-         VALUES ($1, 'owner', $2, $3, $4, $5, $6)
-         RETURNING id, company_id, role, name, email, phone, password_hash, locale, active`,
-        [company.id, params.name, params.email, params.phone ?? null, hash, params.locale],
-      );
-
-      await client.query('COMMIT');
-      return this.issueTokens(user);
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
+    } catch {
+      // Intentionally ignored.
     }
   }
+
+  // Self-serve registration was removed in migration 004's release.
+  // Clients are provisioned by a platform admin (POST /platform/companies),
+  // which creates the company and emails the first owner an invite; the
+  // owner sets their own password via POST /invites/accept.
+  //
+  // Leaving an open /auth/register on a multi-tenant system means anyone
+  // who finds the URL can create a company on the production instance.
 
   async refresh(rawRefreshToken: string): Promise<AuthTokens> {
     const tokenHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');

@@ -6,24 +6,16 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
-  @Post('register')
-  async register(@Body() body: {
-    companyName: string;
-    countryCode: 'MZ' | 'ZA' | 'AO';
-    currency: string;
-    name: string;
-    email: string;
-    password: string;
-    locale: 'pt' | 'en';
-    phone?: string;
-  }) {
-    return this.auth.register(body);
-  }
-
   @Post('login')
   @HttpCode(200)
-  async login(@Body() body: { email: string; password: string; deviceLabel?: string }) {
-    return this.auth.login(body.email, body.password, body.deviceLabel);
+  async login(
+    @Body() body: { email: string; password: string; deviceLabel?: string },
+    @Req() req: any,
+  ) {
+    return this.auth.login(body.email, body.password, body.deviceLabel, {
+      ip: req.headers['x-forwarded-for'] ?? req.ip,
+      userAgent: req.headers['user-agent'],
+    });
   }
 
   @Post('refresh')

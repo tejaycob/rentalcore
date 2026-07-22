@@ -14,6 +14,7 @@ import { MaintenanceModule } from './maintenance/maintenance.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { DocumentsModule } from './documents/documents.module';
+import { PlatformModule } from './platform/platform.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { DocumentsModule } from './documents/documents.module';
     DashboardModule,
     TenantsModule,
     DocumentsModule,
+    PlatformModule,
   ],
   // NOTE on tenancy: the DB connection runs as the table owner and the
   // migration never uses FORCE ROW LEVEL SECURITY, so Postgres RLS does not
