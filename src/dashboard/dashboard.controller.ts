@@ -10,6 +10,9 @@ export class DashboardController {
   @Get('stats')
   stats(@Req() req: any) { return this.service.getStats(req.user.companyId); }
 
+  @Get('charts')
+  charts(@Req() req: any) { return this.service.getCharts(req.user.companyId); }
+
   @Get('activity')
   activity(@Req() req: any) { return this.service.getRecentActivity(req.user.companyId); }
 }
